@@ -368,6 +368,20 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
      *   PTE_W           0x002                   // page table/directory entry flags bit : Writeable
      *   PTE_U           0x004                   // page table/directory entry flags bit : User can access
      */
+	pde_t *pdep = &pgdir[PDX(la)];
+	if(!(*pdep & PTE_P)){
+		if(create){
+			struct Page *tmp = alloc_page();
+			if(tmp == NULL)
+				return NULL;
+			set_page_ref(tmp,1);
+			uintptr_t paddr = page2pa(tmp);
+			memset(KADDR(paddr),0,PGSIZE);
+			*pdep = paddr | PTE_U | PTE_W | PTE_P;
+		}else
+			return NULL;
+	}
+	return &((pte_t*)KADDR(PDE_ADDR(*pdep)))[PTX(la)];
 #if 0
     pde_t *pdep = NULL;   // (1) find page directory entry
     if (0) {              // (2) check if entry is not present
@@ -416,6 +430,13 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
      * DEFINEs:
      *   PTE_P           0x001                   // page table/directory entry flags bit : Present
      */
+	if(*ptep & PTE_P){
+		struct Page *tmp = pte2page(*ptep);
+		if(page_ref_dec(tmp) == 0)
+			free_page(tmp);
+		*ptep = 0;
+		tlb_invalidate(pgdir, la);
+	}
 #if 0
     if (0) {                      //(1) check if this page table entry is present
         struct Page *page = NULL; //(2) find corresponding page to pte
